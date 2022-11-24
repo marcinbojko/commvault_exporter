@@ -37,14 +37,26 @@ It can be used as a stats tool for:
 ### Metrics
 
 - `commvault_exporter_vm` - Gauge - returns virtual machines list with their statuses
-  - statuses
-    - 0 - all
-    - 1 - protected
-    - 2 - non-protected
-    - 3 - pending
-    - 4 - errors in backup
-    - 5 - discovered
-    - 6 - unknown
+
+  |status|status description|
+  |------|------------------|
+  |0|all|
+  |1|protected|
+  |2|non-protected|
+  |3|pending|
+  |4|errors in backup|
+  |5|discovered|
+  |6|unknown|
+  |||
+
+  |sla_status|sla status description|
+  |----------|----------------------|
+  |1| met|
+  |2| not met|
+  |3| excluded|
+  |4| unknown|
+  |||
+
 - `commvault_exporter_vm_request_time_seconds` - Gauge - returns time needed to do a  `webconsole/api/VM` query
 - `commvault_exporter_vm_count` - Gauge - returns lists of VMs in Commvault inventory
 - `commvault_exporter_vm_statuse` - Gauge - returns lists of hosts in all available statuses
@@ -53,17 +65,20 @@ It can be used as a stats tool for:
 ### Commvault presented fields and labels
 
 #### VM
-|commvaults api field|prometheus label|
-|-----------------|----------------|
-|name|name|
-|vmStatus|status|
-|subclientName|subclient_name|
-|plan.planName|plan|
-|strGUID|strGUID|
-|slaStatus|sla_status|
-|lastBackupJobInfo.status|last_backup_job_status|
-|vmSize|vm_size|
-|vmUsedSpace|vm_used_space|
+  |commvaults api field|prometheus label|description|
+  |-----------------|----------------|--------------|
+  |name|name|name of an instance|
+  |vmStatus|status|numeric status of backup|
+  |-|status_description|status description|
+  |subclientName|subclient_name|name of a backup group|
+  |plan.planName|plan|name of a plan used to backup instance|
+  |strGUID|strGUID|guid of VM/Instance - depends on provider|
+  |slaStatus|sla_status|numeric sla status|
+  |-|sla_status_description|sla status description|
+  |lastBackupJobInfo.status|last_backup_job_status|status of last backup job|
+  |bpkEndTime|last_backup_end_time|UTC timestamp when instance last backup completed|
+  |vmSize|vm_size|size of instance/vm|
+  |vmUsedSpace|vm_used_space|space allocated for instance/vm|
 
 ## Tested with
 

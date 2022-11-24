@@ -25,7 +25,7 @@ COMMVAULT_TOKEN_BODY = None
 COMMVAULT_TOKEN = None
 COMMVAULT_VM_RESPONSE = None
 COMMVAULT_VM_BODY = None
-COMMVAULT_EXPORTER_VERSION = "0.0.1"
+COMMVAULT_EXPORTER_VERSION = "0.0.3"
 
 try:
     # set logging
@@ -167,7 +167,24 @@ class RequestsVMs:
     def collect():
         ''' Register Prometheus Metrics for Commvault VMs '''
         # vm gauges gauges
-        g_vm = GaugeMetricFamily('commvault_exporter_vm', 'commvault vm status', labels=['name', 'status', 'subclient_name', 'strguid', 'sla_status', 'plan', 'last_backup_job_status', 'vm_size', 'vm_used_space'])
+        g_vm = GaugeMetricFamily(
+            'commvault_exporter_vm',
+            'commvault vm status',
+            labels=[
+                'name',
+                'status',
+                'status_description',
+                'subclient_name',
+                'strguid',
+                'sla_status',
+                'sla_status_description',
+                'plan',
+                'last_backup_job_status',
+                'last_backup_end_time',
+                'vm_size',
+                'vm_used_space'
+            ]
+        )
         # lets_reset_the variables
         statuses = [
             {
@@ -206,17 +223,26 @@ class RequestsVMs:
                 'count': 0
             }
         ]
+        sla_statuses = [
+            {'code': 1, 'name': 'met', 'count': 0},
+            {'code': 2, 'name': 'not-met', 'count': 0},
+            {'code': 3, 'name': 'excluded', 'count': 0},
+            {'code': 4, 'name': 'unknown', 'count': 0}
+        ]
 
         if COMMVAULT_VM_BODY is not None:
             for each in COMMVAULT_VM_BODY['vmStatusInfoList']:
                 # set defaults
                 name = 'unknown'
                 status = 'unknown'
+                status_description = 'unknown'
                 subclient_name = 'unknown'
                 strguid = 'unknown'
-                sla_status = 'unknown'
+                sla_status = '0'
+                sla_status_description = 'unknown'
                 plan = 'unknown'
                 last_backup_job_status = '99'
+                last_backup_end_time = '0'
                 vm_size = '0'
                 vm_used_space = '0'
                 # set values
@@ -230,26 +256,44 @@ class RequestsVMs:
                         status = str(each['vmStatus'])
                         match status:
                             case "0":
-                                status = "all"
+                                status_description = "all"
                                 statuses[0]['count'] += 1
                             case "1":
-                                status = "protected"
+                                status_description = "protected"
                                 statuses[1]['count'] += 1
                             case "2":
-                                status = "not-protected"
+                                status_description = "not-protected"
                                 statuses[2]['count'] += 1
                             case "3":
-                                status = "pending"
+                                status_description = "pending"
                                 statuses[3]['count'] += 1
                             case "4":
-                                status = "backed-with-error"
+                                status_description = "backed-with-error"
                                 statuses[4]['count'] += 1
                             case "5":
-                                status = 'discovered'
+                                status_description = 'discovered'
                                 statuses[5]['count'] += 1
                             case _:
-                                status = 'unknown'
+                                status_description = 'unknown'
                                 statuses[6]['count'] += 1
+                except KeyError:
+                    pass
+                try:
+                    if not is_blank(str(each['slaStatus'])):
+                        sla_status = str(each['slaStatus'])
+                        match sla_status:
+                            case "1":
+                                sla_status_description = "met"
+                                sla_statuses[0]['count'] += 1
+                            case "2":
+                                sla_status_description = "not-met"
+                                sla_statuses[1]['count'] += 1
+                            case "3":
+                                sla_status_description = "excluded"
+                                sla_statuses[2]['count'] += 1
+                            case _:  # 4
+                                sla_status_description = "unknown"
+                                sla_statuses[3]['count'] += 1
                 except KeyError:
                     pass
                 try:
@@ -257,8 +301,6 @@ class RequestsVMs:
                         subclient_name = str(each['subclientName'])
                     if not is_blank(str(each['strGUID'])):
                         strguid = str(each['strGUID'])
-                    if not is_blank(str(each['slaStatus'])):
-                        sla_status = str(each['slaStatus'])
                     if not is_blank(str(each['plan']['planName'])):
                         plan = (str(each['plan']['planName']))
                     if not is_blank(str(each['lastBackupJobInfo']['status'])):
@@ -267,9 +309,11 @@ class RequestsVMs:
                         vm_size = str(each['vmSize'])
                     if not is_blank(str(each['vmUsedSpace'])):
                         vm_used_space = str(each['vmUsedSpace'])
+                    if not is_blank(str(each['bkpEndTime'])):
+                        last_backup_end_time = str(datetime.datetime.utcfromtimestamp(each['bkpEndTime']).isoformat())
                 except KeyError:
                     pass
-                g_vm.add_metric([name, status, subclient_name, strguid, sla_status, plan, last_backup_job_status, vm_size, vm_used_space], float(each['vmStatus']))
+                g_vm.add_metric([name, status, status_description, subclient_name, strguid, sla_status, sla_status_description, plan, last_backup_job_status, last_backup_end_time, vm_size, vm_used_space], float(each['vmStatus']))
             yield g_vm
         else:
             pass
@@ -294,6 +338,15 @@ class RequestsVMs:
                 g_vm_status[index] = GaugeMetricFamily("commvault_exporter_vm_status", statuses[index]['name'], labels=['host', 'status'])
                 g_vm_status[index].add_metric([REQUEST_HOSTNAME, statuses[index]['name']], int(statuses[index]['count']))
                 yield g_vm_status[index]
+        else:
+            pass
+        # sla_statuses of vms
+        if COMMVAULT_VM_BODY is not None:
+            g_vm_sla_status = {}
+            for index in range(len(sla_statuses)):
+                g_vm_sla_status[index] = GaugeMetricFamily("commvault_exporter_vm_sla_status", sla_statuses[index]['name'], labels=['host', 'sla_status'])
+                g_vm_sla_status[index].add_metric([REQUEST_HOSTNAME, sla_statuses[index]['name']], int(sla_statuses[index]['count']))
+                yield g_vm_sla_status[index]
         else:
             pass
 
