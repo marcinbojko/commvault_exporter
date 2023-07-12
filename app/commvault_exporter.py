@@ -25,71 +25,58 @@ COMMVAULT_TOKEN_BODY = None
 COMMVAULT_TOKEN = None
 COMMVAULT_VM_RESPONSE = None
 COMMVAULT_VM_BODY = None
-COMMVAULT_EXPORTER_VERSION = "0.0.3"
+COMMVAULT_EXPORTER_VERSION = "0.0.4"
+
+lock = threading.Lock()
+
 
 try:
     # set logging
-    logging.basicConfig(format='%(asctime)s %(message)s', encoding='utf-8', level=logging.INFO)
+    logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S', encoding='utf-8', level=logging.INFO)
 except NameError:
     timestamp = datetime.datetime.now()
     print(timestamp, "Logging failed, returning to defaults")
 
 try:
     # host and uri
-    if os.getenv("COMMVAULT_REQUEST_URI") is not None:
-        REQUEST_URI = str(os.getenv("COMMVAULT_REQUEST_URI"))
-        if not REQUEST_URI.endswith("/"):
-            REQUEST_URI += "/"
-    else:
-        REQUEST_URI = "http://commvaultsrv.sample.com"
+    REQUEST_URI = os.getenv("COMMVAULT_REQUEST_URI", "http://commvaultsrv.sample.com")
+    if not REQUEST_URI.endswith("/"):
+        REQUEST_URI += "/"
     # display variables
     REQUEST_HOSTNAME = (urllib.parse.urlparse(REQUEST_URI)).netloc
-    print(f"REQUEST_URI        = {REQUEST_URI}")
-    print(f"REQUEST_HOSTNAME   = {REQUEST_HOSTNAME}")
     # user
-    if os.getenv("COMMVAULT_REQUEST_USER") is not None:
-        REQUEST_USER = str(os.getenv("COMMVAULT_REQUEST_USER"))
-    else:
-        REQUEST_USER = "api"
-    print(f"REQUEST_USER       = {REQUEST_USER}")
+    REQUEST_USER = os.getenv("COMMVAULT_REQUEST_USER", "api")
     # password
-    if os.getenv("COMMVAULT_REQUEST_PASSWORD") is not None:
-        REQUEST_PASSWORD = str(os.getenv("COMMVAULT_REQUEST_PASSWORD"))
-    else:
-        REQUEST_PASSWORD = "api"
+    REQUEST_PASSWORD = os.getenv("COMMVAULT_REQUEST_PASSWORD", "api")
     # tls_verify
-    if os.getenv("COMMVAULT_REQUEST_TLS_VERIFY") is not None:
-        REQUEST_TLS_VERIFY = bool(distutils.util.strtobool((os.getenv("COMMVAULT_REQUEST_TLS_VERIFY"))))
-    else:
-        REQUEST_TLS_VERIFY = False
-    print(f"REQUEST_TLS_VERIFY = {REQUEST_TLS_VERIFY}")
+    REQUEST_TLS_VERIFY = bool(distutils.util.strtobool(os.getenv("COMMVAULT_REQUEST_TLS_VERIFY", "false")))
     # request timeout
-    if os.getenv("COMMVAULT_REQUEST_TIMEOUT") is not None:
-        REQUEST_TIMEOUT = int(os.getenv("COMMVAULT_REQUEST_TIMEOUT"))
-    else:
-        REQUEST_TIMEOUT = 15
-    print(f"REQUEST_TIMEOUT    = {REQUEST_TIMEOUT}")
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
     # request interval
-    if os.getenv("COMMVAUL_REQUEST_INTERVAL") is not None:
-        REQUEST_INTERVAL = int(os.getenv("COMMVAULT_REQUEST_INTERVAL"))
-    else:
-        REQUEST_INTERVAL = 600
-    print(f"REQUEST_INTERVAL   = {REQUEST_INTERVAL}")
+    REQUEST_INTERVAL = int(os.getenv("REQUEST_INTERVAL", "30"))
+    # log variables
+    logging.info("REQUEST_URI is        : %s", REQUEST_URI)
+    logging.info("REQUEST_HOSTNAME is   : %s", REQUEST_HOSTNAME)
+    logging.info("REQUEST_USER is       : %s", REQUEST_USER)
+    logging.info("REQUEST_TLS_VERIFY is : %s", REQUEST_TLS_VERIFY)
+    logging.info("REQUEST_TIMEOUT is    : %s", REQUEST_TIMEOUT)
+    logging.info("REQUEST_INTERVAL is   : %s", REQUEST_INTERVAL)
 except NameError:
     timestamp = datetime.datetime.now()
-    print(timestamp, "Evaluation of Environmental Variables failed, returning to defaults")
+    logging.info("Evaluation of Environmental Variables failed, returning to defaults")
 
 if all(v_check is not None for v_check in [REQUEST_URI, REQUEST_HOSTNAME, REQUEST_USER, REQUEST_PASSWORD, REQUEST_TLS_VERIFY, REQUEST_TIMEOUT]):
     pass
 else:
     timestamp = datetime.datetime.now()
-    print(timestamp, "One of variables is empty")
+    logging.critical("One of mandatory variables is empty - exiting")
     raise SystemExit(1)
 
 
-def is_blank(string):
+def is_blank(is_blank_input):
     ''' Check if string is empty '''
     try:
+        string = str(is_blank_input)
         if string and string.strip():
             # string is not None AND string is not empty or blank
             return False
@@ -113,24 +100,29 @@ def f_requests_token():
         try:
             body = json.loads(response.text)
         except JSONDecodeError:
-            print(datetime.datetime.now(), f"Request at: {REQUEST_URI}Login failed, response is not json")
+            logging.critical(f"Request at: {REQUEST_URI}Login failed, response is not json")
             time.sleep(1)
             sys.exit()
-        if 200 >= response.status_code <= 399:
-            print(datetime.datetime.now(), f"Status request at {REQUEST_URI}webconsole/api/Login with code {response.status_code} took {response.elapsed.seconds} seconds")
+        if 200 <= response.status_code <= 399:
+            logging.info(f"Status request at {REQUEST_URI}webconsole/api/Login with code {response.status_code} took {response.elapsed.seconds} seconds")
             COMMVAULT_TOKEN_BODY = body
             COMMVAULT_TOKEN_RESPONSE = response
             # Status section
             if COMMVAULT_TOKEN_BODY['token'] is not None:
                 COMMVAULT_TOKEN = str(COMMVAULT_TOKEN_BODY['token'])
-                print(datetime.datetime.now(), f"Commvault token acquired from: {REQUEST_URI} ")
+                logging.info(f"Commvault token acquired from: {REQUEST_URI} ")
             else:
                 pass
         else:
-            print(datetime.datetime.now(), f"Response code not proper: {response.status_code}")
+            logging.critical(f"Response code not proper: {response.status_code} we cannot continue")
+            # without token we cannot continue
+            time.sleep(1)
+            sys.exit(1)
     except httpx.HTTPStatusError as err:
-        print(datetime.datetime.now(), f"Request at: {REQUEST_URI}webconsole/api/Login failed with code {err}")
+        # without token we cannot continue
+        logging.critical(f"Request at: {REQUEST_URI}webconsole/api/Login failed with code {err}")
         time.sleep(1)
+        sys.exit(1)
 
 
 def f_requests_vm():
@@ -144,17 +136,20 @@ def f_requests_vm():
         try:
             body = json.loads(response.text)
         except JSONDecodeError:
-            print(datetime.datetime.now(), f"Request at: {REQUEST_URI}webconsole/api/VM failed, response is not json")
+            logging.critical(f"Request at: {REQUEST_URI}webconsole/api/VM failed, response is not json")
             time.sleep(1)
-            sys.exit()
-        if 200 >= response.status_code <= 399:
-            print(datetime.datetime.now(), f"VM request at {REQUEST_URI}VM with code {response.status_code} took {response.elapsed.seconds} seconds")
+            sys.exit(1)
+        if 200 <= response.status_code <= 399:
+            logging.info(f"VM request at {REQUEST_URI}VM with code {response.status_code} took {response.elapsed.seconds} seconds")
             COMMVAULT_VM_BODY = body
             COMMVAULT_VM_RESPONSE = response
         else:
-            print(datetime.datetime.now(), f"Response code not proper: {response.status_code}")
+            logging.error(f"Response code not proper: {response.status_code} - we can continue but this is not good")
+            time.sleep(1)
+            # without vm statuses we can continue
     except httpx.HTTPStatusError as err:
-        print(datetime.datetime.now(), f"Request at: {REQUEST_URI}webconsole/api/VM failed with code {err}")
+        # without vm statuses we can continue
+        logging.error(f"Request at: {REQUEST_URI}webconsole/api/VM failed with code {err}")
         time.sleep(1)
 
 
@@ -182,7 +177,8 @@ class RequestsVMs:
                 'last_backup_job_status',
                 'last_backup_end_time',
                 'vm_size',
-                'vm_used_space'
+                'vm_used_space',
+                'request_timestamp'
             ]
         )
         # lets_reset_the variables
@@ -245,14 +241,15 @@ class RequestsVMs:
                 last_backup_end_time = '0'
                 vm_size = '0'
                 vm_used_space = '0'
+                request_timestamp = '0'
                 # set values
                 try:
-                    if not is_blank(str(each['name'])):
+                    if not is_blank(each.get('name')):
                         name = str(each['name'])
                 except KeyError:
                     pass
                 try:
-                    if not is_blank(str(each['vmStatus'])):
+                    if not is_blank(each.get('vmStatus')):
                         status = str(each['vmStatus'])
                         match status:
                             case "0":
@@ -279,7 +276,7 @@ class RequestsVMs:
                 except KeyError:
                     pass
                 try:
-                    if not is_blank(str(each['slaStatus'])):
+                    if not is_blank(each.get('slaStatus')):
                         sla_status = str(each['slaStatus'])
                         match sla_status:
                             case "1":
@@ -297,23 +294,29 @@ class RequestsVMs:
                 except KeyError:
                     pass
                 try:
-                    if not is_blank(str(each['subclientName'])):
+                    if not is_blank(each.get('subclientName')):
                         subclient_name = str(each['subclientName'])
-                    if not is_blank(str(each['strGUID'])):
+                    if not is_blank(each.get('strGUID')):
                         strguid = str(each['strGUID'])
-                    if not is_blank(str(each['plan']['planName'])):
+                    if not is_blank(each.get('plan').get('planName')):
                         plan = (str(each['plan']['planName']))
-                    if not is_blank(str(each['lastBackupJobInfo']['status'])):
+                    if not is_blank(each.get('lastBackupJobInfo').get('status')):
                         last_backup_job_status = str(each['lastBackupJobInfo']['status'])
-                    if not is_blank(str(each['vmSize'])):
+                    if not is_blank(each.get('vmSize')):
                         vm_size = str(each['vmSize'])
-                    if not is_blank(str(each['vmUsedSpace'])):
+                    if not is_blank(each.get('vmUsedSpace')):
                         vm_used_space = str(each['vmUsedSpace'])
-                    if not is_blank(str(each['bkpEndTime'])):
+                    if not is_blank(each.get('bkpEndTime')):
                         last_backup_end_time = str(datetime.datetime.utcfromtimestamp(each['bkpEndTime']).isoformat())
+                    request_timestamp = str(datetime.datetime.now().timestamp())
                 except KeyError:
                     pass
-                g_vm.add_metric([name, status, status_description, subclient_name, strguid, sla_status, sla_status_description, plan, last_backup_job_status, last_backup_end_time, vm_size, vm_used_space], float(each['vmStatus']))
+                g_vm.add_metric(
+                    [
+                        name, status, status_description, subclient_name, strguid, sla_status, sla_status_description, plan, last_backup_job_status,
+                        last_backup_end_time, vm_size, vm_used_space, request_timestamp
+                    ],
+                    float(each['vmStatus']))
             yield g_vm
         else:
             pass
@@ -362,25 +365,23 @@ def f_process_request():
 
 def f_start_http():
     ''' Start http server '''
-    print(datetime.datetime.now(), "Starting http server at port 8000")
+    logging.info("Starting http server at port 8000")
     # Start up the server to expose the metrics.
     start_http_server(8000)
 
 
 def main():
     ''' Main threading loop '''
-    thread = threading.Thread(target=f_process_request)
-    thread.start()
-    thread.join()
-
-
-if __name__ == '__main__':
-    # Initial fill in
-    print(datetime.datetime.now(), f"Script version is {COMMVAULT_EXPORTER_VERSION}")
+    logging.info("Script version is     : %s", COMMVAULT_EXPORTER_VERSION)
     f_requests_token()
     f_requests_vm()
     f_start_http()
     # Register gauges
     REGISTRY.register(RequestsVMs())
     while True:
-        main()
+        with lock:
+            f_process_request()
+
+
+if __name__ == '__main__':
+    main()

@@ -10,7 +10,10 @@ else
   exit 1
 fi
 if [ -n "$version" ] && [ -n "$release" ]; then
-  docker build --pull --platform linux/amd64 --no-cache -t "$release":"$version" .
+  # docker build --pull --platform linux/amd64 --no-cache -t "$release":"$version" .
+  docker buildx create --use
+  docker buildx build  --platform linux/amd64 -t "$release":"$version" .
+#  docker buildx rm
   build_status=$?
   docker container prune --force
   # let's tag latest
