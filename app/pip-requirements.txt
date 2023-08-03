@@ -1,4 +1,4 @@
 prometheus-client
 packaging
 httpx
-yaml
+pyyaml
