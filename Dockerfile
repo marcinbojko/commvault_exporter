@@ -9,7 +9,7 @@ USER python-user
 WORKDIR /app
 ENV PYTHONPATH '/app/'
 ENV TZ "Europe/Warsaw"
-LABEL version="0.0.4"
+LABEL version="0.0.5-1"
 LABEL release="commvault_exporter"
 LABEL maintainer="marcinbojko"
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD curl -f http://localhost:8000 || exit 1

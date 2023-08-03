@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import urllib.request
 from json.decoder import JSONDecodeError
+from config import Config
 
 import httpx
 # from packaging import version
@@ -25,7 +26,7 @@ COMMVAULT_TOKEN_BODY = None
 COMMVAULT_TOKEN = None
 COMMVAULT_VM_RESPONSE = None
 COMMVAULT_VM_BODY = None
-COMMVAULT_EXPORTER_VERSION = "0.0.4"
+COMMVAULT_EXPORTER_VERSION = "0.0.5-1"
 
 lock = threading.Lock()
 
@@ -75,6 +76,11 @@ else:
 
 def is_blank(is_blank_input):
     ''' Check if string is empty '''
+    # Initialize the variable
+    string = None
+    if is_blank_input is None:
+        #logging.critical(f"Variable: {is_blank_input} is none")
+        return True
     try:
         string = str(is_blank_input)
         if string and string.strip():
@@ -82,7 +88,17 @@ def is_blank(is_blank_input):
             return False
         # string is None OR string is empty or blank
         return True
-    except NameError:
+    except Exception as e:
+        logging.critical(f"An error occurred while trying to convert the input to a string: {e}")
+        return True
+    # Check if the string is empty or contains only whitespace
+    if string and string.strip():
+        # string is not None AND string is not empty or blank
+        print("The string is not blank.")
+        return False
+    else:
+        # string is None OR string is empty or blank
+        print("The string is blank.")
         return True
 
 
@@ -298,10 +314,12 @@ class RequestsVMs:
                         subclient_name = str(each['subclientName'])
                     if not is_blank(each.get('strGUID')):
                         strguid = str(each['strGUID'])
-                    if not is_blank(each.get('plan').get('planName')):
-                        plan = (str(each['plan']['planName']))
-                    if not is_blank(each.get('lastBackupJobInfo').get('status')):
-                        last_backup_job_status = str(each['lastBackupJobInfo']['status'])
+                    if not is_blank(each.get('plan')):
+                        if not is_blank(each.get('plan').get('planName')):
+                            plan = (str(each['plan']['planName']))
+                    if not is_blank(each.get('lastBackupJobInfo')):
+                        if not is_blank(each.get('lastBackupJobInfo').get('status')):
+                            last_backup_job_status = str(each['lastBackupJobInfo']['status'])
                     if not is_blank(each.get('vmSize')):
                         vm_size = str(each['vmSize'])
                     if not is_blank(each.get('vmUsedSpace')):
@@ -371,6 +389,16 @@ def f_start_http():
 
 
 def main():
+    ''' Check for config file '''
+    config = Config('config.yaml')
+
+    code = """
+    param1 = "${param1}"
+    param2 = "${param2}"
+    """
+    code = config.substitute_variables(code)
+    print(code)
+
     ''' Main threading loop '''
     logging.info("Script version is     : %s", COMMVAULT_EXPORTER_VERSION)
     f_requests_token()

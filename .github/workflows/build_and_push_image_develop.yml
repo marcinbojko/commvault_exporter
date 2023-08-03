@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'test'
+      - 'dev'
       - 'develop'
 jobs:
   buildx:
@@ -34,12 +35,6 @@ jobs:
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "maintainer=$maintainer" >> "$GITHUB_OUTPUT"
-      - name: display
-        id: build_push_amd64_display
-        run: |
-          echo "${{ steps.build_push.outputs.release }}"
-          echo "${{ steps.build_push.outputs.version }}"
-          echo "${{ steps.build_push.outputs.maintainer }}"
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
