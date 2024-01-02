@@ -26,7 +26,7 @@ COMMVAULT_TOKEN_BODY = None
 COMMVAULT_TOKEN = None
 COMMVAULT_VM_RESPONSE = None
 COMMVAULT_VM_BODY = None
-COMMVAULT_EXPORTER_VERSION = "0.0.5-1"
+COMMVAULT_EXPORTER_VERSION = "0.0.5-2"
 
 lock = threading.Lock()
 
@@ -193,8 +193,7 @@ class RequestsVMs:
                 'last_backup_job_status',
                 'last_backup_end_time',
                 'vm_size',
-                'vm_used_space',
-                'request_timestamp'
+                'vm_used_space'
             ]
         )
         # lets_reset_the variables
@@ -257,7 +256,6 @@ class RequestsVMs:
                 last_backup_end_time = '0'
                 vm_size = '0'
                 vm_used_space = '0'
-                request_timestamp = '0'
                 # set values
                 try:
                     if not is_blank(each.get('name')):
@@ -326,13 +324,12 @@ class RequestsVMs:
                         vm_used_space = str(each['vmUsedSpace'])
                     if not is_blank(each.get('bkpEndTime')):
                         last_backup_end_time = str(datetime.datetime.utcfromtimestamp(each['bkpEndTime']).isoformat())
-                    request_timestamp = str(datetime.datetime.now().timestamp())
                 except KeyError:
                     pass
                 g_vm.add_metric(
                     [
                         name, status, status_description, subclient_name, strguid, sla_status, sla_status_description, plan, last_backup_job_status,
-                        last_backup_end_time, vm_size, vm_used_space, request_timestamp
+                        last_backup_end_time, vm_size, vm_used_space
                     ],
                     float(each['vmStatus']))
             yield g_vm
